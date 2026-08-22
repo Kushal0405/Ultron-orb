@@ -21,9 +21,16 @@ const TOKEN_KEY = "ultron-agent-token";
 const RECONNECT_BASE_MS = 1500;
 const RECONNECT_MAX_MS = 20000;
 const COMMAND_TIMEOUT_MS = 5000;
+// Claude Code round-trips (CLI startup + a real model call) run tens of
+// seconds, not the sub-second latency of an allowlist lookup.
+const ASK_TIMEOUT_MS = 65_000;
 
 interface PendingCommand {
   resolve: (result: { ok: boolean; message: string }) => void;
+}
+
+interface PendingAsk {
+  resolve: (result: { ok: boolean; text: string }) => void;
 }
 
 export class NativeAgentClient {
@@ -35,6 +42,7 @@ export class NativeAgentClient {
   private manuallyStopped = true;
   private state: AgentState = "disconnected";
   private pending = new Map<string, PendingCommand>();
+  private pendingAsks = new Map<string, PendingAsk>();
 
   constructor(callbacks: AgentCallbacks, url: string = DEFAULT_AGENT_URL) {
     this.callbacks = callbacks;
@@ -88,6 +96,30 @@ export class NativeAgentClient {
     });
   }
 
+  /**
+   * Hands a voice command the fixed parser didn't recognize to Claude Code,
+   * running under the agent's local `claude` login (see agent/claudeBrain.mjs).
+   * Claude's only capability there is the same app-opening allowlist —
+   * Bash/Edit/Write/etc. are disallowed, so this can't run arbitrary code.
+   */
+  ask(text: string): Promise<{ ok: boolean; text: string }> {
+    return new Promise((resolve) => {
+      if (!this.ws || this.state !== "connected") {
+        resolve({ ok: false, text: "" });
+        return;
+      }
+      const id = Math.random().toString(36).slice(2);
+      this.pendingAsks.set(id, { resolve });
+      this.ws.send(JSON.stringify({ type: "ask", text, id }));
+      setTimeout(() => {
+        if (this.pendingAsks.has(id)) {
+          this.pendingAsks.delete(id);
+          resolve({ ok: false, text: "" });
+        }
+      }, ASK_TIMEOUT_MS);
+    });
+  }
+
   private open(): void {
     if (typeof window === "undefined") return;
     const token = NativeAgentClient.getToken();
@@ -135,6 +167,13 @@ export class NativeAgentClient {
         if (pending) {
           this.pending.delete(id);
           pending.resolve({ ok: Boolean(msg.ok), message: String(msg.message ?? "") });
+        }
+      } else if (msg.type === "answer") {
+        const id = String(msg.id ?? "");
+        const pending = this.pendingAsks.get(id);
+        if (pending) {
+          this.pendingAsks.delete(id);
+          pending.resolve({ ok: Boolean(msg.ok), text: String(msg.text ?? "") });
         }
       }
     };

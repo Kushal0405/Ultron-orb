@@ -89,3 +89,36 @@ file.
 Because this process can execute commands on your machine, only run it
 locally, keep `agent/.token` out of version control (already gitignored),
 and only add entries to `apps.json` you'd be fine running yourself.
+
+## The Claude brain (optional, needs Claude Code)
+
+Voice commands the fixed parser can't match — anything more open-ended than
+"open X" or a known system action — get handed to [Claude Code](https://claude.com/product/claude-code)
+running locally, instead of just failing. Requires:
+
+- `claude` installed and logged in on the same machine as the agent (a
+  Claude Pro/Max subscription login works — this rides on that, not a
+  separately billed API key)
+- the agent running (`npm run agent`)
+
+Nothing else to configure. Each unmatched command runs `claude -p "<what
+was heard>" --output-format json`, a fresh non-interactive subprocess with
+no memory of previous calls, and the answer is spoken back through your
+browser's speech synthesis (there's no chat panel in the HUD by design —
+see `agent/claudeBrain.mjs`). Known commands (open an app, lock, volume,
+etc.) never go through this path — they stay on the instant allowlist
+lookup above.
+
+**Claude's only capability here is one MCP tool, `open_app`** (`agent/mcpServer.mjs`),
+wired to the exact same `apps.json` allowlist as everything else on this
+page. Claude Code's own built-in tools — Bash, Edit, Write, Read, Glob,
+Grep, WebFetch, WebSearch, Task, and the rest — are explicitly disallowed
+via `--disallowedTools`. This is deliberate and non-negotiable: a
+voice-triggered path with real shell or file access would mean a misheard
+word, background audio, or anyone near the mic could cause arbitrary code
+execution on your machine, with only the model's judgment (not an
+allowlist) standing in the way. Scoped to one pre-defined action, a wrong
+call just fails harmlessly — same guarantee as the rest of this agent.
+
+Set `ULTRON_CLAUDE_MODEL` (default `sonnet`) to change which model handles
+these — accepts an alias (`sonnet`, `opus`, `haiku`) or a full model ID.

@@ -16,6 +16,7 @@ import {
   type AudioDeviceLabels,
 } from "@/lib/systemInfo";
 import { fetchWeather, type WeatherReading } from "@/lib/weather";
+import { speak } from "@/lib/speech";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type WeatherPhase = "idle" | "loading" | "unavailable" | "ready";
@@ -352,6 +353,21 @@ export default function JarvisOrb() {
             break;
         }
         return;
+      }
+
+      if (command.type === "cancel") return;
+
+      // Anything the fixed parser didn't recognize goes to Claude, scoped to
+      // the same app-opening allowlist (see agent/claudeBrain.mjs) — agent
+      // only, since open-ended reasoning has no sensible web fallback.
+      const agent = agentRef.current;
+      if (!agent?.connected) return;
+      setExecuting(true);
+      try {
+        const result = await agent.ask(command.raw);
+        if (result.text) speak(result.text);
+      } finally {
+        setExecuting(false);
       }
     },
     [openTarget, startGestures, stopGestures],

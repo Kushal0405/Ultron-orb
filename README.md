@@ -63,14 +63,13 @@ does — say it, then say a command:
 | "turn on wifi" / "turn off bluetooth" / "dark mode" / "do not disturb" | System toggles *(needs the agent)* |
 | "take a screenshot" / "empty trash" | *(needs the agent)* |
 | "cancel" / "never mind" | Cancel the current command |
+| anything else | Handed to Claude *(needs the agent + [Claude Code](#the-claude-brain))* |
 
-The HUD shows live captions, a mic-level waveform, and a scrolling command
-log so you can see exactly what it heard. System-level actions (marked
-*needs the agent* above) have no web equivalent — a browser genuinely can't
-lock your screen or change your volume, so those only work once the local
-agent below is running. See [`agent/README.md`](agent/README.md) for the
-full ~75-entry allowlist across apps, power, media, and system toggles, and
-how to add your own.
+System-level actions (marked *needs the agent* above) have no web
+equivalent — a browser genuinely can't lock your screen or change your
+volume, so those only work once the local agent below is running. See
+[`agent/README.md`](agent/README.md) for the full ~75-entry allowlist
+across apps, power, media, and system toggles, and how to add your own.
 
 #### Opening native apps
 
@@ -86,6 +85,23 @@ It prints a one-time auth token; click **AGENT OFFLINE** in the HUD and
 paste it in. See [`agent/README.md`](agent/README.md) for how it works and
 its security model (localhost-only, token-authed, allowlisted apps only —
 voice text is never run as a shell command).
+
+#### The Claude brain
+
+If a voice command doesn't match anything the parser recognizes, and the
+agent is connected, it's handed to [Claude Code](https://claude.com/product/claude-code)
+running locally — a fresh, non-interactive `claude -p` call per command,
+authenticated however your `claude` CLI already is (a Pro/Max subscription
+login works, no separate API key needed). The answer is spoken back through
+your browser rather than shown in a panel, since there's no transcript UI.
+
+Claude's only capability there is the same app-opening allowlist —
+`Bash`/`Edit`/`Write`/`Read`/`WebFetch`/and the rest of Claude Code's
+built-in tools are explicitly disallowed. That's deliberate: giving a
+voice-triggered path real shell or file access would mean a misheard word
+could execute arbitrary code on your machine, and no model's judgment is a
+substitute for an allowlist there. See [`agent/README.md`](agent/README.md#the-claude-brain-optional-needs-claude-code)
+for the full setup and reasoning.
 
 ## The dashboard
 
@@ -130,8 +146,11 @@ static site with no backend of its own.
   web URL, or relay it to the local agent.
 - **`lib/systemInfo.ts`** / **`lib/weather.ts`** — real, best-effort device
   telemetry (CPU/memory/network/battery/device labels) and opt-in weather.
+- **`lib/speech.ts`** — speaks Claude's answers aloud (Web Speech Synthesis).
 - **`agent/`** — the optional local companion process that can actually
-  launch native apps (see above).
+  launch native apps (see above) and, via `claudeBrain.mjs` +
+  `mcpServer.mjs`, hand unmatched commands to Claude Code, scoped to that
+  same app-opening allowlist and nothing else.
 - **`components/JarvisOrb.tsx`** — the HUD and glue between the scene, the
   tracker, voice control, and your inputs.
 

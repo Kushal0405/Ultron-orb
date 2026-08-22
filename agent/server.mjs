@@ -10,22 +10,24 @@
 //   - Only ever runs commands that already exist in apps.json, matched by
 //     alias. Voice/UI text is used ONLY to look up an alias — it is never
 //     concatenated into a shell command. There is no "run arbitrary text"
-//     path.
+//     path — that holds for the optional Claude brain too (see
+//     claudeBrain.mjs): its only capability is the same allowlist lookup,
+//     with Claude Code's shell/file/web tools explicitly disallowed.
 //   - Rejects WebSocket upgrades from origins outside ALLOWED_ORIGINS.
 //
 // Run with: npm run agent
 
 import { WebSocketServer } from "ws";
-import { exec } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadApps, runTarget } from "./appResolver.mjs";
+import { askClaude } from "./claudeBrain.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.ULTRON_AGENT_PORT ?? 8765);
 const TOKEN_FILE = path.join(__dirname, ".token");
-const APPS_FILE = path.join(__dirname, "apps.json");
 const AUTH_TIMEOUT_MS = 5000;
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:3000",
@@ -40,30 +42,6 @@ function loadToken() {
   return token;
 }
 
-function loadApps() {
-  const raw = JSON.parse(readFileSync(APPS_FILE, "utf8"));
-  delete raw._comment;
-  return raw;
-}
-
-function resolveCommand(apps, target) {
-  const platform = process.platform; // 'darwin' | 'win32' | 'linux'
-  const key = String(target ?? "").toLowerCase().trim();
-  if (!key) return null;
-
-  let entry = apps[key];
-  if (!entry) {
-    const words = key.split(/\s+/);
-    const wordAlias = Object.keys(apps).find((k) => words.includes(k));
-    // Substring fallback for a truncated/partial name, alias-contains-target
-    // direction only: the reverse ("unlock" containing "lock") would make
-    // almost any longer word fuzzy-match a short allowlisted alias.
-    const alias = wordAlias ?? Object.keys(apps).find((k) => k.length >= 4 && k.includes(key));
-    if (alias) entry = apps[alias];
-  }
-  return entry?.[platform] ?? null;
-}
-
 const token = loadToken();
 
 console.log("ULTRON local agent");
@@ -72,7 +50,8 @@ console.log(`  platform:  ${process.platform}`);
 console.log(`  token:     ${token}`);
 console.log("  Paste this token into the ULTRON web UI's AGENT connect prompt.");
 console.log(`  (also saved to ${TOKEN_FILE} — keep it out of version control)`);
-console.log(`  Edit ${APPS_FILE} to add/change what voice commands are allowed to open.`);
+console.log("  Edit apps.json to add/change what voice commands are allowed to open.");
+console.log("  Unmatched voice commands are handed to Claude Code (`claude` on PATH), scoped to the same allowlist — see claudeBrain.mjs.");
 
 const wss = new WebSocketServer({ host: "127.0.0.1", port: PORT });
 
@@ -88,7 +67,7 @@ wss.on("connection", (ws, req) => {
     if (!authed) ws.close(1008, "auth timeout");
   }, AUTH_TIMEOUT_MS);
 
-  ws.on("message", (raw) => {
+  ws.on("message", async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
@@ -117,30 +96,15 @@ wss.on("connection", (ws, req) => {
     if (!authed) return;
 
     if (msg.type === "command" && msg.action === "open") {
-      let apps;
-      try {
-        apps = loadApps();
-      } catch (err) {
-        ws.send(JSON.stringify({ type: "result", id: msg.id, ok: false, message: `apps.json error: ${err.message}` }));
-        return;
-      }
+      const result = await runTarget(msg.target);
+      ws.send(JSON.stringify({ type: "result", id: msg.id, ok: result.ok, message: result.message }));
+      return;
+    }
 
-      const cmd = resolveCommand(apps, msg.target);
-      if (!cmd) {
-        ws.send(JSON.stringify({ type: "result", id: msg.id, ok: false, message: `no allowlisted app matches "${msg.target}"` }));
-        return;
-      }
-
-      exec(cmd, (err) => {
-        ws.send(
-          JSON.stringify({
-            type: "result",
-            id: msg.id,
-            ok: !err,
-            message: err ? err.message : "opened",
-          }),
-        );
-      });
+    if (msg.type === "ask" && typeof msg.text === "string") {
+      const result = await askClaude(msg.text);
+      ws.send(JSON.stringify({ type: "answer", id: msg.id, ok: result.ok, text: result.text }));
+      return;
     }
   });
 
