@@ -251,14 +251,15 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
   // ——— animation ———
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
   const dummy = new THREE.Object3D();
   let rafId = 0;
 
   function tick(): void {
     rafId = requestAnimationFrame(tick);
-    const dt = Math.min(clock.getDelta(), 0.1);
-    const t = clock.elapsedTime;
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1);
+    const t = timer.getElapsed();
 
     core.rotation.y += dt * 0.15;
     core.rotation.x += dt * 0.03;

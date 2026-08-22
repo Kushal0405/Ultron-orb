@@ -166,6 +166,27 @@ body {
   transform-origin: left;
 }
 
+.status-line {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.status-value {
+  color: rgba(79, 216, 255, 0.65);
+}
+
+.status-value.up {
+  color: #6bffc7;
+  text-shadow: 0 0 6px rgba(107, 255, 199, 0.6);
+}
+
+.status-divider {
+  margin: 6px 0;
+  height: 1px;
+  background: linear-gradient(to left, rgba(79, 216, 255, 0.5), transparent);
+}
+
 .agent-pill {
   margin-top: 10px;
   font-size: 10px;
@@ -269,6 +290,13 @@ body {
 .voice-caption.interim {
   opacity: 0.45;
   font-style: italic;
+}
+
+.voice-executing {
+  margin-top: 6px;
+  color: #6bffc7;
+  text-shadow: 0 0 8px rgba(107, 255, 199, 0.6);
+  animation: voice-pulse 0.9s ease-in-out infinite;
 }
 
 /* ——— Command log (bottom-center) ——— */
@@ -456,5 +484,51 @@ body {
   }
   .panel-status {
     display: none;
+  }
+}
+
+/* ——— Boot sequence overlay ——— */
+.boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 4, 10, 0.86);
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+.boot-overlay.hidden {
+  opacity: 0;
+}
+
+.boot-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 30px;
+  background: rgba(1, 6, 14, 0.8);
+  border: 1px solid rgba(79, 216, 255, 0.3);
+  border-radius: 4px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: #9fe9ff;
+  text-shadow: 0 0 8px rgba(79, 216, 255, 0.7);
+}
+
+.boot-line {
+  animation: boot-line-in 0.25s ease both;
+}
+
+@keyframes boot-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

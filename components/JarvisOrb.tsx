@@ -43,12 +43,52 @@ const METER_BARS = 14;
 const LOG_LIMIT = 8;
 let nextLogId = 0;
 
+const BOOT_SEQUENCE = [
+  "ULTRON CORE :: INITIALIZING",
+  "RENDER PIPELINE ... OK",
+  "VISION SUBSYSTEM ... STANDBY",
+  "AUDIO SUBSYSTEM ... STANDBY",
+  "NEURAL LINK ESTABLISHED",
+];
+const BOOT_LINE_DELAY_MS = 260;
+const BOOT_HOLD_MS = 500;
+
+function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, totalSeconds);
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
 /** A single SVG bracket, mirrored per corner via CSS transforms to frame the viewport. */
 function CornerBracket({ corner }: { corner: "tl" | "tr" | "bl" | "br" }) {
   return (
     <svg className={`corner-bracket ${corner}`} viewBox="0 0 24 24" aria-hidden>
       <path d="M2 18 V2 H18" />
     </svg>
+  );
+}
+
+/** A short staged boot readout on first mount, purely cosmetic. */
+function BootSequence({ hidden }: { hidden: boolean }) {
+  const [lineCount, setLineCount] = useState(0);
+
+  useEffect(() => {
+    const timers = BOOT_SEQUENCE.map((_, i) => setTimeout(() => setLineCount(i + 1), i * BOOT_LINE_DELAY_MS));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className={`boot-overlay${hidden ? " hidden" : ""}`} aria-hidden>
+      <div className="boot-lines">
+        {BOOT_SEQUENCE.slice(0, lineCount).map((line, i) => (
+          <div key={i} className="boot-line">
+            {line}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -73,7 +113,11 @@ export default function JarvisOrb() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [agentState, setAgentState] = useState<AgentState>("disconnected");
   const [clock, setClock] = useState("");
+  const [uptime, setUptime] = useState("00:00:00");
+  const [sessionId, setSessionId] = useState("------");
   const [readouts, setReadouts] = useState({ core: 72, output: 88 });
+  const [executing, setExecuting] = useState(false);
+  const [bootHidden, setBootHidden] = useState(false);
 
   const pushLog = useCallback((text: string, kind: LogEntry["kind"] = "heard") => {
     setLog((prev) => [{ id: nextLogId++, text, kind }, ...prev].slice(0, LOG_LIMIT));
@@ -167,20 +211,25 @@ export default function JarvisOrb() {
 
       if (command.type === "open") {
         pushLog(`OPEN "${command.target}"`, "heard");
-        const agent = agentRef.current;
-        if (agent?.connected) {
-          const result = await agent.openApp(command.target);
-          if (result.ok) {
-            pushLog(`✓ opened ${command.target}`, "action");
-            return;
+        setExecuting(true);
+        try {
+          const agent = agentRef.current;
+          if (agent?.connected) {
+            const result = await agent.openApp(command.target);
+            if (result.ok) {
+              pushLog(`✓ opened ${command.target}`, "action");
+              return;
+            }
           }
-        }
-        const url = resolveWebApp(command.target);
-        if (url) {
-          openWebApp(url);
-          pushLog(`✓ opened ${command.target} (web)`, "action");
-        } else {
-          pushLog(`✗ don't know "${command.target}"`, "error");
+          const url = resolveWebApp(command.target);
+          if (url) {
+            openWebApp(url);
+            pushLog(`✓ opened ${command.target} (web)`, "action");
+          } else {
+            pushLog(`✗ don't know "${command.target}"`, "error");
+          }
+        } finally {
+          setExecuting(false);
         }
         return;
       }
@@ -298,8 +347,10 @@ export default function JarvisOrb() {
 
   // ——— clock + ambient status readouts ———
   useEffect(() => {
+    const startedAt = Date.now();
     const tick = () => {
       setClock(new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      setUptime(formatDuration(Math.floor((Date.now() - startedAt) / 1000)));
       const t = Date.now() / 1000;
       setReadouts({
         core: 60 + Math.sin(t * 0.7) * 15 + Math.random() * 4,
@@ -309,6 +360,13 @@ export default function JarvisOrb() {
     tick();
     const id = setInterval(tick, 700);
     return () => clearInterval(id);
+  }, []);
+
+  // ——— session identity + boot sequence (cosmetic, client-only to avoid SSR mismatch) ———
+  useEffect(() => {
+    setSessionId(Math.random().toString(16).slice(2, 8).toUpperCase());
+    const id = setTimeout(() => setBootHidden(true), BOOT_SEQUENCE.length * BOOT_LINE_DELAY_MS + BOOT_HOLD_MS);
+    return () => clearTimeout(id);
   }, []);
 
   const cameraOn = cameraState === "on";
@@ -326,11 +384,20 @@ export default function JarvisOrb() {
       <CornerBracket corner="tr" />
       <CornerBracket corner="bl" />
       <CornerBracket corner="br" />
+      <BootSequence hidden={bootHidden} />
 
       <div className="hud panel-title">U.L.T.R.O.N.</div>
 
       <div className="hud panel-status">
         <div className="clock">{clock || "--:--:--"}</div>
+        <div className="status-line">
+          <span>SESSION</span>
+          <span className="status-value">{sessionId}</span>
+        </div>
+        <div className="status-line">
+          <span>UPTIME</span>
+          <span className="status-value">{uptime}</span>
+        </div>
         <div className="readout-row">
           CORE SYNC
           <span className="readout-bar">
@@ -342,6 +409,15 @@ export default function JarvisOrb() {
           <span className="readout-bar">
             <span style={{ transform: `scaleX(${Math.min(1, Math.max(0, readouts.output / 100))})` }} />
           </span>
+        </div>
+        <div className="status-divider" />
+        <div className="status-line">
+          <span>VISION</span>
+          <span className={`status-value${cameraOn ? " up" : ""}`}>{cameraOn ? "ONLINE" : "STANDBY"}</span>
+        </div>
+        <div className="status-line">
+          <span>AUDIO</span>
+          <span className={`status-value${voiceOn ? " up" : ""}`}>{voiceOn ? "ONLINE" : "STANDBY"}</span>
         </div>
         <button type="button" className="agent-pill" data-state={agentState} onClick={connectAgent}>
           {AGENT_LABEL[agentState]}
@@ -367,6 +443,7 @@ export default function JarvisOrb() {
         <div className={`voice-caption${caption.isFinal ? "" : " interim"}`}>
           {caption.text || (voiceOn ? "· say “hey ultron” ·" : "")}
         </div>
+        {executing && <div className="voice-executing">EXECUTING…</div>}
       </div>
 
       <div className="hud panel-log">
