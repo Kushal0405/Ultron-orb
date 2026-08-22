@@ -20,19 +20,6 @@ import { fetchWeather, type WeatherReading } from "@/lib/weather";
 type CameraState = "off" | "starting" | "on" | "error";
 type WeatherPhase = "idle" | "loading" | "unavailable" | "ready";
 
-interface LogEntry {
-  id: number;
-  text: string;
-  kind: "heard" | "action" | "error";
-}
-
-interface PipelineStats {
-  requests: number;
-  toolCalls: number;
-  lastLatencyMs: number | null;
-  lastCommand: string | null;
-}
-
 const GESTURE_LABEL: Record<TrackerStatus["mode"], string> = {
   idle: "STANDBY",
   spin: "SPIN",
@@ -64,8 +51,6 @@ const QUICK_ACTIONS = [
 ];
 
 const METER_BARS = 14;
-const LOG_LIMIT = 20;
-let nextLogId = 0;
 
 const BOOT_SEQUENCE = [
   "ULTRON CORE :: INITIALIZING",
@@ -167,8 +152,6 @@ export default function JarvisOrb() {
 
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [caption, setCaption] = useState({ text: "", isFinal: true });
-  const [log, setLog] = useState<LogEntry[]>([]);
   const [executing, setExecuting] = useState(false);
 
   const [agentState, setAgentState] = useState<AgentState>("disconnected");
@@ -193,12 +176,6 @@ export default function JarvisOrb() {
 
   const [weatherPhase, setWeatherPhase] = useState<WeatherPhase>("idle");
   const [weather, setWeather] = useState<WeatherReading | null>(null);
-
-  const [stats, setStats] = useState<PipelineStats>({ requests: 0, toolCalls: 0, lastLatencyMs: null, lastCommand: null });
-
-  const pushLog = useCallback((text: string, kind: LogEntry["kind"] = "heard") => {
-    setLog((prev) => [{ id: nextLogId++, text, kind }, ...prev].slice(0, LOG_LIMIT));
-  }, []);
 
   // ——— orb scene lifecycle ———
   useEffect(() => {
@@ -324,37 +301,20 @@ export default function JarvisOrb() {
   }, [agentState]);
 
   // ——— opening an app/action: shared by voice commands and the quick-action buttons ———
-  const openTarget = useCallback(
-    async (target: string) => {
-      pushLog(`OPEN "${target}"`, "heard");
-      setExecuting(true);
-      setStats((s) => ({ ...s, requests: s.requests + 1, lastCommand: `open ${target}` }));
-      const startedAt = performance.now();
-      try {
-        const agent = agentRef.current;
-        if (agent?.connected) {
-          const result = await agent.openApp(target);
-          const latencyMs = Math.round(performance.now() - startedAt);
-          if (result.ok) {
-            setStats((s) => ({ ...s, toolCalls: s.toolCalls + 1, lastLatencyMs: latencyMs }));
-            pushLog(`✓ opened ${target}`, "action");
-            return;
-          }
-          setStats((s) => ({ ...s, lastLatencyMs: latencyMs }));
-        }
-        const url = resolveWebApp(target);
-        if (url) {
-          openWebApp(url);
-          pushLog(`✓ opened ${target} (web)`, "action");
-        } else {
-          pushLog(`✗ don't know "${target}"`, "error");
-        }
-      } finally {
-        setExecuting(false);
+  const openTarget = useCallback(async (target: string) => {
+    setExecuting(true);
+    try {
+      const agent = agentRef.current;
+      if (agent?.connected) {
+        const result = await agent.openApp(target);
+        if (result.ok) return;
       }
-    },
-    [pushLog],
-  );
+      const url = resolveWebApp(target);
+      if (url) openWebApp(url);
+    } finally {
+      setExecuting(false);
+    }
+  }, []);
 
   // ——— voice command dispatch ———
   const runCommand = useCallback(
@@ -367,8 +327,6 @@ export default function JarvisOrb() {
       }
 
       if (command.type === "orb") {
-        pushLog(`> ${command.action}`, "action");
-        setStats((s) => ({ ...s, requests: s.requests + 1, lastCommand: command.action }));
         const scene = sceneRef.current;
         switch (command.action) {
           case "spin-left":
@@ -395,15 +353,8 @@ export default function JarvisOrb() {
         }
         return;
       }
-
-      if (command.type === "cancel") {
-        pushLog("cancelled", "heard");
-        return;
-      }
-
-      pushLog(`? "${command.raw}"`, "error");
     },
-    [openTarget, pushLog, startGestures, stopGestures],
+    [openTarget, startGestures, stopGestures],
   );
 
   const paintMeter = useCallback((level: number) => {
@@ -420,21 +371,20 @@ export default function JarvisOrb() {
     if (voiceRef.current?.isRunning) return;
     const voice = new VoiceControl({
       onState: setVoiceState,
-      onTranscript: (text, isFinal) => setCaption({ text, isFinal }),
+      onTranscript: () => {},
       onWake: () => {},
       onTimeout: () => {},
       onCommand: (text) => void runCommand(text),
       onLevel: paintMeter,
-      onError: (message) => pushLog(message, "error"),
+      onError: (message) => console.error(message),
     });
     voiceRef.current = voice;
     void voice.start();
-  }, [paintMeter, pushLog, runCommand]);
+  }, [paintMeter, runCommand]);
 
   const stopVoice = useCallback(() => {
     voiceRef.current?.stop();
     voiceRef.current = null;
-    setCaption({ text: "", isFinal: true });
     paintMeter(0);
   }, [paintMeter]);
 
@@ -581,19 +531,6 @@ export default function JarvisOrb() {
 
         <div className="card">
           <div className="card-header">
-            <span className="card-title">AI PIPELINE</span>
-            <span className={`card-badge${voiceOn || agentState === "connected" ? " live" : ""}`}>
-              {voiceOn || agentState === "connected" ? "ONLINE" : "IDLE"}
-            </span>
-          </div>
-          <StatRow label="LAST COMMAND" value={stats.lastCommand ?? "—"} />
-          <StatRow label="LATENCY" value={stats.lastLatencyMs !== null ? `${stats.lastLatencyMs} ms` : "—"} />
-          <StatRow label="REQUESTS" value={String(stats.requests)} />
-          <StatRow label="TOOL CALLS" value={String(stats.toolCalls)} />
-        </div>
-
-        <div className="card">
-          <div className="card-header">
             <span className="card-title">AGENT</span>
           </div>
           <button type="button" className="agent-pill" data-state={agentState} onClick={connectAgent}>
@@ -712,24 +649,6 @@ export default function JarvisOrb() {
             <span>Render loop</span>
           </div>
         </div>
-
-        <div className="card card-grow">
-          <div className="card-header">
-            <span className="card-title">CONVERSATION</span>
-            <button type="button" className="card-action" onClick={() => setLog([])}>
-              Clear
-            </button>
-          </div>
-          <div className="chat-list">
-            {log.length === 0 && <div className="chat-empty">No activity yet.</div>}
-            {[...log].reverse().map((entry) => (
-              <div key={entry.id} className={`chat-bubble ${entry.kind === "heard" ? "you" : "ultron"}`}>
-                <div className="chat-from">{entry.kind === "heard" ? "YOU" : "ULTRON"}</div>
-                <div className={`chat-text ${entry.kind}`}>{entry.text}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* ——— center: session readout + voice status ——— */}
@@ -754,9 +673,6 @@ export default function JarvisOrb() {
               style={{ height: "2px" }}
             />
           ))}
-        </div>
-        <div className={`voice-caption${caption.isFinal ? "" : " interim"}`}>
-          {caption.text || (voiceOn ? "· say “hey ultron” ·" : "")}
         </div>
         {executing && <div className="voice-executing">EXECUTING…</div>}
         <div className="key-hint">

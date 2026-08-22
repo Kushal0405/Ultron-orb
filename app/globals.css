@@ -210,13 +210,6 @@ body {
   box-shadow: 0 0 14px rgba(31, 140, 214, 0.08) inset;
 }
 
-.card-grow {
-  flex: 1;
-  min-height: 140px;
-  display: flex;
-  flex-direction: column;
-}
-
 .card-header {
   display: flex;
   align-items: center;
@@ -246,17 +239,6 @@ body {
   color: #6bffc7;
   border-color: rgba(107, 255, 199, 0.6);
   opacity: 1;
-}
-
-.card-action {
-  background: none;
-  border: none;
-  color: rgba(79, 216, 255, 0.65);
-  font-family: "Courier New", monospace;
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 /* ——— Gauges ——— */
@@ -440,66 +422,6 @@ body {
   box-shadow: 0 0 6px 1px rgba(107, 255, 199, 0.7);
 }
 
-/* ——— Conversation ——— */
-.chat-list {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-right: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(79, 216, 255, 0.3) transparent;
-}
-
-.chat-empty {
-  opacity: 0.4;
-  font-style: italic;
-  font-size: 10.5px;
-}
-
-.chat-bubble {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-width: 94%;
-}
-
-.chat-bubble.you {
-  align-self: flex-end;
-  align-items: flex-end;
-}
-
-.chat-bubble.ultron {
-  align-self: flex-start;
-  align-items: flex-start;
-}
-
-.chat-from {
-  font-size: 8px;
-  letter-spacing: 0.1em;
-  opacity: 0.45;
-}
-
-.chat-text {
-  font-size: 10.5px;
-  padding: 5px 9px;
-  border-radius: 8px;
-  background: rgba(79, 216, 255, 0.08);
-  border: 1px solid rgba(79, 216, 255, 0.2);
-  word-break: break-word;
-}
-
-.chat-text.action {
-  color: #6bffc7;
-  border-color: rgba(107, 255, 199, 0.35);
-}
-
-.chat-text.error {
-  color: #ff6a5a;
-  border-color: rgba(255, 106, 90, 0.35);
-}
-
 /* ——— Center session readout ——— */
 .center-status {
   top: 68px;
@@ -582,20 +504,6 @@ body {
   background: rgba(79, 216, 255, 0.8);
   border-radius: 1px;
   transition: height 0.06s linear;
-}
-
-.voice-caption {
-  min-height: 14px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  opacity: 0.8;
-  word-break: break-word;
-  text-shadow: 0 0 8px rgba(79, 216, 255, 0.5);
-}
-
-.voice-caption.interim {
-  opacity: 0.45;
-  font-style: italic;
 }
 
 .voice-executing {

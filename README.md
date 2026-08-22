@@ -96,13 +96,15 @@ value the browser genuinely exposes, or clearly marked as needing something
 | Panel | Shows |
 | --- | --- |
 | System status | Live gauges for mic input level, render FPS, and battery (where the browser exposes it); CPU core count, approximate network speed, and real mic/speaker device names once permission is granted |
-| AI pipeline | Last command, round-trip latency to the agent, and running counts of requests / successful tool calls this session |
 | Agent | Connection state, plus the connected machine's platform and allowlist size once linked |
 | Quick actions | One-click versions of common voice commands — disabled until the local agent is connected, since none of them have a sensible web fallback |
 | Weather | Real current conditions via your browser's geolocation (opt-in — nothing is requested until you click) |
 | Connection | Whether the page is served over HTTPS, whether the agent link is authenticated, and mic permission state |
 | Active subsystems | Live on/off state of voice, hand tracking, the agent link, and the render loop |
-| Conversation | A running chat-style transcript of what was heard and done |
+
+There's deliberately no activity log, command history, or transcript of what
+was heard — the dashboard shows live system/session state, not a running
+record of input or conversation.
 
 Weather uses two free, keyless APIs — [open-meteo.com](https://open-meteo.com)
 for the reading and [bigdatacloud.net](https://www.bigdatacloud.com) to turn
