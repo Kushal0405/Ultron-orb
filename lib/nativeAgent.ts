@@ -6,8 +6,14 @@
 
 export type AgentState = "disconnected" | "connecting" | "connected" | "denied" | "error";
 
+export interface AgentInfo {
+  platform: string;
+  appCount: number;
+}
+
 export interface AgentCallbacks {
   onState(state: AgentState): void;
+  onInfo?(info: AgentInfo): void;
 }
 
 export const DEFAULT_AGENT_URL = "ws://127.0.0.1:8765";
@@ -116,6 +122,9 @@ export class NativeAgentClient {
       if (msg.type === "auth_ok") {
         this.reconnectDelay = RECONNECT_BASE_MS;
         this.setState("connected");
+        if (typeof msg.platform === "string") {
+          this.callbacks.onInfo?.({ platform: msg.platform, appCount: Number(msg.appCount ?? 0) });
+        }
       } else if (msg.type === "auth_fail") {
         this.manuallyStopped = true; // don't hammer a rejected token
         this.setState("denied");

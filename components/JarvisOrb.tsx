@@ -6,14 +6,31 @@ import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import { VoiceControl, isVoiceControlSupported, type VoiceState } from "@/lib/voiceControl";
 import { parseCommand } from "@/lib/commandParser";
 import { resolveWebApp, openWebApp } from "@/lib/webFallback";
-import { NativeAgentClient, type AgentState } from "@/lib/nativeAgent";
+import { NativeAgentClient, type AgentState, type AgentInfo } from "@/lib/nativeAgent";
+import {
+  readStaticDeviceInfo,
+  watchBattery,
+  readAudioDeviceLabels,
+  type StaticDeviceInfo,
+  type BatteryReading,
+  type AudioDeviceLabels,
+} from "@/lib/systemInfo";
+import { fetchWeather, type WeatherReading } from "@/lib/weather";
 
 type CameraState = "off" | "starting" | "on" | "error";
+type WeatherPhase = "idle" | "loading" | "unavailable" | "ready";
 
 interface LogEntry {
   id: number;
   text: string;
   kind: "heard" | "action" | "error";
+}
+
+interface PipelineStats {
+  requests: number;
+  toolCalls: number;
+  lastLatencyMs: number | null;
+  lastCommand: string | null;
 }
 
 const GESTURE_LABEL: Record<TrackerStatus["mode"], string> = {
@@ -39,8 +56,15 @@ const AGENT_LABEL: Record<AgentState, string> = {
   error: "AGENT ERROR",
 };
 
+const QUICK_ACTIONS = [
+  { label: "OPEN BROWSER", target: "browser" },
+  { label: "SCREENSHOT", target: "screenshot" },
+  { label: "LOCK SCREEN", target: "lock" },
+  { label: "TERMINAL", target: "terminal" },
+];
+
 const METER_BARS = 14;
-const LOG_LIMIT = 8;
+const LOG_LIMIT = 20;
 let nextLogId = 0;
 
 const BOOT_SEQUENCE = [
@@ -92,6 +116,40 @@ function BootSequence({ hidden }: { hidden: boolean }) {
   );
 }
 
+/** A circular readout ring. `percent` null renders an empty "N/A" ring rather than faking a value. */
+function Gauge({ label, percent, valueText, tone }: { label: string; percent: number | null; valueText: string; tone: string }) {
+  const radius = 25;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = percent === null ? 0 : Math.min(100, Math.max(0, percent));
+  const offset = circumference - (clamped / 100) * circumference;
+  return (
+    <div className="gauge">
+      <svg viewBox="0 0 64 64" aria-hidden>
+        <circle className="gauge-track" cx="32" cy="32" r={radius} />
+        <circle
+          className={`gauge-fill ${tone}`}
+          cx="32"
+          cy="32"
+          r={radius}
+          strokeDasharray={circumference}
+          strokeDashoffset={percent === null ? circumference : offset}
+        />
+      </svg>
+      <div className="gauge-value">{valueText}</div>
+      <div className="gauge-label">{label}</div>
+    </div>
+  );
+}
+
+function StatRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="stat-row">
+      <span>{label}</span>
+      <span className="stat-value">{value}</span>
+    </div>
+  );
+}
+
 export default function JarvisOrb() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -111,13 +169,32 @@ export default function JarvisOrb() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [caption, setCaption] = useState({ text: "", isFinal: true });
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [executing, setExecuting] = useState(false);
+
   const [agentState, setAgentState] = useState<AgentState>("disconnected");
+  const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
+
   const [clock, setClock] = useState("");
+  const [date, setDate] = useState("");
   const [uptime, setUptime] = useState("00:00:00");
   const [sessionId, setSessionId] = useState("------");
-  const [readouts, setReadouts] = useState({ core: 72, output: 88 });
-  const [executing, setExecuting] = useState(false);
   const [bootHidden, setBootHidden] = useState(false);
+
+  const [deviceInfo, setDeviceInfo] = useState<StaticDeviceInfo>({
+    cpuCores: null,
+    deviceMemoryGB: null,
+    downlinkMbps: null,
+    effectiveType: null,
+  });
+  const [battery, setBattery] = useState<BatteryReading | null>(null);
+  const [audioLabels, setAudioLabels] = useState<AudioDeviceLabels>({ mic: null, speaker: null });
+  const [micLevel, setMicLevel] = useState(0);
+  const [fps, setFps] = useState(0);
+
+  const [weatherPhase, setWeatherPhase] = useState<WeatherPhase>("idle");
+  const [weather, setWeather] = useState<WeatherReading | null>(null);
+
+  const [stats, setStats] = useState<PipelineStats>({ requests: 0, toolCalls: 0, lastLatencyMs: null, lastCommand: null });
 
   const pushLog = useCallback((text: string, kind: LogEntry["kind"] = "heard") => {
     setLog((prev) => [{ id: nextLogId++, text, kind }, ...prev].slice(0, LOG_LIMIT));
@@ -136,6 +213,42 @@ export default function JarvisOrb() {
       sceneRef.current = null;
     };
   }, []);
+
+  // ——— real render performance (measures this page's actual frame rate) ———
+  useEffect(() => {
+    let rafId = 0;
+    let frames = 0;
+    let windowStart = 0;
+    const loop = (t: number) => {
+      if (windowStart === 0) windowStart = t;
+      frames++;
+      if (t - windowStart >= 500) {
+        setFps(Math.round((frames * 1000) / (t - windowStart)));
+        frames = 0;
+        windowStart = t;
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  // ——— device info: CPU/memory/network are static; battery is a live subscription ———
+  useEffect(() => {
+    setDeviceInfo(readStaticDeviceInfo());
+    return watchBattery(setBattery);
+  }, []);
+
+  useEffect(() => {
+    readAudioDeviceLabels().then(setAudioLabels);
+  }, []);
+
+  // Device labels are blank until permission is granted — re-read once voice actually starts.
+  useEffect(() => {
+    if (voiceState !== "idle" && voiceState !== "unsupported") {
+      readAudioDeviceLabels().then(setAudioLabels);
+    }
+  }, [voiceState]);
 
   // ——— hand gestures ———
   const stopGestures = useCallback(() => {
@@ -182,7 +295,13 @@ export default function JarvisOrb() {
 
   // ——— native agent (optional local companion — see /agent) ———
   useEffect(() => {
-    const client = new NativeAgentClient({ onState: setAgentState });
+    const client = new NativeAgentClient({
+      onState: (state) => {
+        setAgentState(state);
+        if (state !== "connected") setAgentInfo(null);
+      },
+      onInfo: setAgentInfo,
+    });
     agentRef.current = client;
     if (NativeAgentClient.getToken()) client.connect();
     return () => client.disconnect();
@@ -204,38 +323,52 @@ export default function JarvisOrb() {
     if (NativeAgentClient.getToken()) client.connect();
   }, [agentState]);
 
+  // ——— opening an app/action: shared by voice commands and the quick-action buttons ———
+  const openTarget = useCallback(
+    async (target: string) => {
+      pushLog(`OPEN "${target}"`, "heard");
+      setExecuting(true);
+      setStats((s) => ({ ...s, requests: s.requests + 1, lastCommand: `open ${target}` }));
+      const startedAt = performance.now();
+      try {
+        const agent = agentRef.current;
+        if (agent?.connected) {
+          const result = await agent.openApp(target);
+          const latencyMs = Math.round(performance.now() - startedAt);
+          if (result.ok) {
+            setStats((s) => ({ ...s, toolCalls: s.toolCalls + 1, lastLatencyMs: latencyMs }));
+            pushLog(`✓ opened ${target}`, "action");
+            return;
+          }
+          setStats((s) => ({ ...s, lastLatencyMs: latencyMs }));
+        }
+        const url = resolveWebApp(target);
+        if (url) {
+          openWebApp(url);
+          pushLog(`✓ opened ${target} (web)`, "action");
+        } else {
+          pushLog(`✗ don't know "${target}"`, "error");
+        }
+      } finally {
+        setExecuting(false);
+      }
+    },
+    [pushLog],
+  );
+
   // ——— voice command dispatch ———
   const runCommand = useCallback(
     async (heard: string) => {
       const command = parseCommand(heard);
 
       if (command.type === "open") {
-        pushLog(`OPEN "${command.target}"`, "heard");
-        setExecuting(true);
-        try {
-          const agent = agentRef.current;
-          if (agent?.connected) {
-            const result = await agent.openApp(command.target);
-            if (result.ok) {
-              pushLog(`✓ opened ${command.target}`, "action");
-              return;
-            }
-          }
-          const url = resolveWebApp(command.target);
-          if (url) {
-            openWebApp(url);
-            pushLog(`✓ opened ${command.target} (web)`, "action");
-          } else {
-            pushLog(`✗ don't know "${command.target}"`, "error");
-          }
-        } finally {
-          setExecuting(false);
-        }
+        await openTarget(command.target);
         return;
       }
 
       if (command.type === "orb") {
         pushLog(`> ${command.action}`, "action");
+        setStats((s) => ({ ...s, requests: s.requests + 1, lastCommand: command.action }));
         const scene = sceneRef.current;
         switch (command.action) {
           case "spin-left":
@@ -270,7 +403,7 @@ export default function JarvisOrb() {
 
       pushLog(`? "${command.raw}"`, "error");
     },
-    [pushLog, startGestures, stopGestures],
+    [openTarget, pushLog, startGestures, stopGestures],
   );
 
   const paintMeter = useCallback((level: number) => {
@@ -315,6 +448,20 @@ export default function JarvisOrb() {
     return () => voiceRef.current?.stop();
   }, []);
 
+  // ——— weather: only fetched on request, since it needs a geolocation permission prompt ———
+  const enableWeather = useCallback(() => {
+    if (weatherPhase === "loading" || weatherPhase === "ready") return;
+    setWeatherPhase("loading");
+    fetchWeather().then((reading) => {
+      if (reading) {
+        setWeather(reading);
+        setWeatherPhase("ready");
+      } else {
+        setWeatherPhase("unavailable");
+      }
+    });
+  }, [weatherPhase]);
+
   // ——— keyboard shortcuts ———
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -345,24 +492,21 @@ export default function JarvisOrb() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleGestures, toggleVoice]);
 
-  // ——— clock + ambient status readouts ———
+  // ——— clock, date, uptime, session id, mic-level sample, boot timing ———
   useEffect(() => {
     const startedAt = Date.now();
     const tick = () => {
-      setClock(new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      const now = new Date();
+      setClock(now.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      setDate(now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }));
       setUptime(formatDuration(Math.floor((Date.now() - startedAt) / 1000)));
-      const t = Date.now() / 1000;
-      setReadouts({
-        core: 60 + Math.sin(t * 0.7) * 15 + Math.random() * 4,
-        output: 75 + Math.cos(t * 0.5) * 10 + Math.random() * 3,
-      });
+      setMicLevel(Math.round((meterHistoryRef.current[METER_BARS - 1] ?? 0) * 100));
     };
     tick();
     const id = setInterval(tick, 700);
     return () => clearInterval(id);
   }, []);
 
-  // ——— session identity + boot sequence (cosmetic, client-only to avoid SSR mismatch) ———
   useEffect(() => {
     setSessionId(Math.random().toString(16).slice(2, 8).toUpperCase());
     const id = setTimeout(() => setBootHidden(true), BOOT_SEQUENCE.length * BOOT_LINE_DELAY_MS + BOOT_HOLD_MS);
@@ -372,6 +516,8 @@ export default function JarvisOrb() {
   const cameraOn = cameraState === "on";
   const voiceOn = voiceState === "listening" || voiceState === "awake";
   const voiceDotClass = voiceState === "awake" ? "awake" : voiceState === "listening" ? "live" : "";
+  const micGranted = voiceState !== "idle" && voiceState !== "unsupported" && voiceState !== "denied";
+  const secure = typeof window !== "undefined" && window.location.protocol === "https:";
 
   return (
     <>
@@ -386,45 +532,214 @@ export default function JarvisOrb() {
       <CornerBracket corner="br" />
       <BootSequence hidden={bootHidden} />
 
-      <div className="hud panel-title">U.L.T.R.O.N.</div>
-
-      <div className="hud panel-status">
-        <div className="clock">{clock || "--:--:--"}</div>
-        <div className="status-line">
-          <span>SESSION</span>
-          <span className="status-value">{sessionId}</span>
+      {/* ——— top bar ——— */}
+      <div className="hud topbar">
+        <div className="topbar-brand">
+          <span className="brand-mark" aria-hidden />
+          <div>
+            <div className="brand-title">U.L.T.R.O.N.</div>
+            <div className="brand-subtitle">Voice-controlled interface</div>
+          </div>
         </div>
-        <div className="status-line">
-          <span>UPTIME</span>
-          <span className="status-value">{uptime}</span>
+        <div className="topbar-hint">Say &quot;Hey Ultron&quot; or press V</div>
+        <div className="topbar-clock">
+          <div className="clock">{clock || "--:--:--"}</div>
+          <div className="date">{date}</div>
         </div>
-        <div className="readout-row">
-          CORE SYNC
-          <span className="readout-bar">
-            <span style={{ transform: `scaleX(${Math.min(1, Math.max(0, readouts.core / 100))})` }} />
-          </span>
-        </div>
-        <div className="readout-row">
-          REACTOR OUT
-          <span className="readout-bar">
-            <span style={{ transform: `scaleX(${Math.min(1, Math.max(0, readouts.output / 100))})` }} />
-          </span>
-        </div>
-        <div className="status-divider" />
-        <div className="status-line">
-          <span>VISION</span>
-          <span className={`status-value${cameraOn ? " up" : ""}`}>{cameraOn ? "ONLINE" : "STANDBY"}</span>
-        </div>
-        <div className="status-line">
-          <span>AUDIO</span>
-          <span className={`status-value${voiceOn ? " up" : ""}`}>{voiceOn ? "ONLINE" : "STANDBY"}</span>
-        </div>
-        <button type="button" className="agent-pill" data-state={agentState} onClick={connectAgent}>
-          {AGENT_LABEL[agentState]}
-        </button>
       </div>
 
-      <div className="hud panel-voice">
+      {/* ——— left sidebar ——— */}
+      <div className="hud sidebar sidebar-left">
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">SYSTEM STATUS</span>
+            <span className="card-badge live">● LIVE</span>
+          </div>
+          <div className="gauge-row">
+            <Gauge label="MIC" percent={voiceOn ? micLevel : 0} valueText={voiceOn ? `${micLevel}%` : "OFF"} tone="c-mic" />
+            <Gauge label="FPS" percent={Math.min(100, (fps / 60) * 100)} valueText={String(fps)} tone="c-fps" />
+            <Gauge
+              label="BATTERY"
+              percent={battery ? battery.level * 100 : null}
+              valueText={battery ? `${Math.round(battery.level * 100)}%` : "N/A"}
+              tone="c-battery"
+            />
+          </div>
+          <StatRow
+            label="NETWORK"
+            value={
+              deviceInfo.downlinkMbps
+                ? `${deviceInfo.downlinkMbps} Mbps`
+                : (deviceInfo.effectiveType?.toUpperCase() ?? "N/A")
+            }
+          />
+          <StatRow label="CPU CORES" value={deviceInfo.cpuCores ? String(deviceInfo.cpuCores) : "N/A"} />
+          <StatRow label="MEMORY" value={deviceInfo.deviceMemoryGB ? `${deviceInfo.deviceMemoryGB} GB` : "N/A"} />
+          <StatRow label="MICROPHONE" value={audioLabels.mic ?? "permission needed"} />
+          <StatRow label="SPEAKER" value={audioLabels.speaker ?? "permission needed"} />
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">AI PIPELINE</span>
+            <span className={`card-badge${voiceOn || agentState === "connected" ? " live" : ""}`}>
+              {voiceOn || agentState === "connected" ? "ONLINE" : "IDLE"}
+            </span>
+          </div>
+          <StatRow label="LAST COMMAND" value={stats.lastCommand ?? "—"} />
+          <StatRow label="LATENCY" value={stats.lastLatencyMs !== null ? `${stats.lastLatencyMs} ms` : "—"} />
+          <StatRow label="REQUESTS" value={String(stats.requests)} />
+          <StatRow label="TOOL CALLS" value={String(stats.toolCalls)} />
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">AGENT</span>
+          </div>
+          <button type="button" className="agent-pill" data-state={agentState} onClick={connectAgent}>
+            {AGENT_LABEL[agentState]}
+          </button>
+          {agentInfo && (
+            <>
+              <StatRow label="PLATFORM" value={agentInfo.platform} />
+              <StatRow label="ALLOWLIST" value={`${agentInfo.appCount} apps`} />
+            </>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">QUICK ACTIONS</span>
+            <span className={`card-badge${agentState === "connected" ? " live" : ""}`}>
+              {agentState === "connected" ? "READY" : "NEEDS AGENT"}
+            </span>
+          </div>
+          <div className="quick-grid">
+            {QUICK_ACTIONS.map((qa) => (
+              <button
+                key={qa.target}
+                type="button"
+                className="quick-btn"
+                onClick={() => void openTarget(qa.target)}
+                disabled={agentState !== "connected"}
+                title={agentState !== "connected" ? "Connect the local agent (see the AGENT card) to use this" : undefined}
+              >
+                {qa.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {cameraOn && (
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">GESTURE CAM</span>
+            </div>
+            <div className="camera-preview visible">
+              <video ref={videoRef} muted playsInline className="camera-video" />
+              <canvas ref={overlayRef} width={208} height={156} className="camera-overlay" />
+              <div className="camera-status">
+                {gestureStatus.hands > 0
+                  ? `${gestureStatus.hands} HAND${gestureStatus.hands > 1 ? "S" : ""} · ${GESTURE_LABEL[gestureStatus.mode]}`
+                  : "SHOW HANDS"}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      {/* video/canvas must exist even with the cam card hidden, so gestures can still start */}
+      {!cameraOn && (
+        <div style={{ position: "fixed", width: 0, height: 0, overflow: "hidden" }}>
+          <video ref={videoRef} muted playsInline />
+          <canvas ref={overlayRef} width={208} height={156} />
+        </div>
+      )}
+
+      {/* ——— right sidebar ——— */}
+      <div className="hud sidebar sidebar-right">
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">WEATHER</span>
+          </div>
+          {weatherPhase === "ready" && weather ? (
+            <>
+              <div className="weather-temp">{Math.round(weather.tempC)}°C</div>
+              <div className="weather-place">{weather.place}</div>
+              <div className="weather-condition">{weather.condition}</div>
+            </>
+          ) : weatherPhase === "loading" ? (
+            <div className="stat-row">
+              <span>Locating…</span>
+            </div>
+          ) : weatherPhase === "unavailable" ? (
+            <div className="stat-row">
+              <span>Location unavailable</span>
+            </div>
+          ) : (
+            <button type="button" className="quick-btn" onClick={enableWeather}>
+              ENABLE LOCATION
+            </button>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">CONNECTION</span>
+          </div>
+          <StatRow label="PAGE" value={secure ? "ENCRYPTED (HTTPS)" : "LOCAL"} />
+          <StatRow label="AGENT LINK" value={agentState === "connected" ? "AUTHENTICATED" : "NOT CONNECTED"} />
+          <StatRow label="MIC ACCESS" value={micGranted ? "GRANTED" : voiceState === "denied" ? "DENIED" : "NOT REQUESTED"} />
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">ACTIVE SUBSYSTEMS</span>
+          </div>
+          <div className="subsystem-row">
+            <span className={`subsystem-dot${voiceOn ? " up" : ""}`} />
+            <span>Voice listening</span>
+          </div>
+          <div className="subsystem-row">
+            <span className={`subsystem-dot${cameraOn ? " up" : ""}`} />
+            <span>Hand tracking</span>
+          </div>
+          <div className="subsystem-row">
+            <span className={`subsystem-dot${agentState === "connected" ? " up" : ""}`} />
+            <span>Native agent</span>
+          </div>
+          <div className="subsystem-row">
+            <span className="subsystem-dot up" />
+            <span>Render loop</span>
+          </div>
+        </div>
+
+        <div className="card card-grow">
+          <div className="card-header">
+            <span className="card-title">CONVERSATION</span>
+            <button type="button" className="card-action" onClick={() => setLog([])}>
+              Clear
+            </button>
+          </div>
+          <div className="chat-list">
+            {log.length === 0 && <div className="chat-empty">No activity yet.</div>}
+            {[...log].reverse().map((entry) => (
+              <div key={entry.id} className={`chat-bubble ${entry.kind === "heard" ? "you" : "ultron"}`}>
+                <div className="chat-from">{entry.kind === "heard" ? "YOU" : "ULTRON"}</div>
+                <div className={`chat-text ${entry.kind}`}>{entry.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ——— center: session readout + voice status ——— */}
+      <div className="hud center-status">
+        <div className="session-line">
+          SESSION {sessionId} · UPTIME {uptime}
+        </div>
+      </div>
+
+      <div className="hud voice-strip">
         <div className="voice-state">
           <span className={`voice-dot ${voiceDotClass}`} />
           {voiceSupported ? VOICE_LABEL[voiceState] : "VOICE UNSUPPORTED — TRY CHROME"}
@@ -444,77 +759,38 @@ export default function JarvisOrb() {
           {caption.text || (voiceOn ? "· say “hey ultron” ·" : "")}
         </div>
         {executing && <div className="voice-executing">EXECUTING…</div>}
-      </div>
-
-      <div className="hud panel-log">
-        {log.map((entry) => (
-          <div key={entry.id} className={`log-line ${entry.kind}`}>
-            {entry.text}
-          </div>
-        ))}
-      </div>
-
-      <div className="hud panel-hint">
-        <div>
-          <span className="key">DRAG</span> spin&nbsp;&nbsp;
-          <span className="key">SCROLL</span> zoom
-        </div>
-        {cameraOn ? (
-          <div>
-            <span className="key">PINCH + MOVE</span> spin&nbsp;&nbsp;
-            <span className="key">PINCH BOTH HANDS ± SPREAD</span> zoom
-          </div>
-        ) : (
-          <div>
-            <span className="key">G</span> hand gestures&nbsp;&nbsp;
-            <span className="key">V</span> voice&nbsp;&nbsp;
-            <span className="key">R</span> reset&nbsp;&nbsp;
-            <span className="key">+/−</span> zoom
-          </div>
-        )}
-        <div>
-          <span className="key">SAY</span> &quot;hey ultron, open spotify&quot; · &quot;zoom in&quot; · &quot;reset view&quot;
+        <div className="key-hint">
+          <span className="key">G</span> gestures&nbsp;&nbsp;
+          <span className="key">V</span> voice&nbsp;&nbsp;
+          <span className="key">R</span> reset&nbsp;&nbsp;
+          <span className="key">+/−</span> zoom
         </div>
       </div>
 
-      <div className="hud panel-controls">
-        <div className={`camera-preview${cameraOn ? " visible" : ""}`}>
-          <video ref={videoRef} muted playsInline className="camera-video" />
-          <canvas ref={overlayRef} width={208} height={156} className="camera-overlay" />
-          <div className="camera-status">
-            {gestureStatus.hands > 0
-              ? `${gestureStatus.hands} HAND${gestureStatus.hands > 1 ? "S" : ""} · ${GESTURE_LABEL[gestureStatus.mode]}`
-              : "SHOW HANDS"}
-          </div>
-        </div>
-
+      {/* ——— bottom bar ——— */}
+      <div className="hud bottombar">
         {gestureError && <div className="hud-error">{gestureError}</div>}
-
-        <div className="control-row">
-          <button type="button" className="hud-btn" aria-pressed={voiceOn} onClick={toggleVoice} disabled={!voiceSupported}>
-            {voiceOn ? "VOICE ON" : "VOICE OFF"}
-          </button>
-          <button
-            type="button"
-            className="hud-btn"
-            aria-pressed={cameraOn}
-            onClick={toggleGestures}
-            disabled={cameraState === "starting"}
-          >
-            {cameraState === "starting" ? "INITIALIZING…" : cameraOn ? "GESTURES ON" : "GESTURES OFF"}
-          </button>
-        </div>
-        <div className="control-row">
-          <button type="button" className="hud-btn" onClick={() => sceneRef.current?.zoomIn()} aria-label="Zoom in">
-            +
-          </button>
-          <button type="button" className="hud-btn" onClick={() => sceneRef.current?.zoomOut()} aria-label="Zoom out">
-            −
-          </button>
-          <button type="button" className="hud-btn" onClick={() => sceneRef.current?.resetView()}>
-            RESET
-          </button>
-        </div>
+        <button type="button" className="hud-btn" aria-pressed={voiceOn} onClick={toggleVoice} disabled={!voiceSupported}>
+          {voiceOn ? "VOICE ON" : "VOICE OFF"}
+        </button>
+        <button
+          type="button"
+          className="hud-btn"
+          aria-pressed={cameraOn}
+          onClick={toggleGestures}
+          disabled={cameraState === "starting"}
+        >
+          {cameraState === "starting" ? "INITIALIZING…" : cameraOn ? "GESTURES ON" : "GESTURES OFF"}
+        </button>
+        <button type="button" className="hud-btn" onClick={() => sceneRef.current?.zoomOut()} aria-label="Zoom out">
+          −
+        </button>
+        <button type="button" className="hud-btn" onClick={() => sceneRef.current?.zoomIn()} aria-label="Zoom in">
+          +
+        </button>
+        <button type="button" className="hud-btn" onClick={() => sceneRef.current?.resetView()}>
+          RESET
+        </button>
       </div>
     </>
   );

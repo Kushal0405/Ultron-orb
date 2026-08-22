@@ -87,6 +87,29 @@ paste it in. See [`agent/README.md`](agent/README.md) for how it works and
 its security model (localhost-only, token-authed, allowlisted apps only —
 voice text is never run as a shell command).
 
+## The dashboard
+
+Around the orb sits a system dashboard — everything on it is either a real
+value the browser genuinely exposes, or clearly marked as needing something
+(mic permission, the local agent, location access) rather than faked:
+
+| Panel | Shows |
+| --- | --- |
+| System status | Live gauges for mic input level, render FPS, and battery (where the browser exposes it); CPU core count, approximate network speed, and real mic/speaker device names once permission is granted |
+| AI pipeline | Last command, round-trip latency to the agent, and running counts of requests / successful tool calls this session |
+| Agent | Connection state, plus the connected machine's platform and allowlist size once linked |
+| Quick actions | One-click versions of common voice commands — disabled until the local agent is connected, since none of them have a sensible web fallback |
+| Weather | Real current conditions via your browser's geolocation (opt-in — nothing is requested until you click) |
+| Connection | Whether the page is served over HTTPS, whether the agent link is authenticated, and mic permission state |
+| Active subsystems | Live on/off state of voice, hand tracking, the agent link, and the render loop |
+| Conversation | A running chat-style transcript of what was heard and done |
+
+Weather uses two free, keyless APIs — [open-meteo.com](https://open-meteo.com)
+for the reading and [bigdatacloud.net](https://www.bigdatacloud.com) to turn
+your coordinates into a place name. Your location is sent only to those two
+services for that one lookup; nothing is sent anywhere else, since this is a
+static site with no backend of its own.
+
 ## How it works
 
 - **`lib/orbScene.ts`** — the Three.js scene: a fresnel-shaded icosahedral
@@ -103,6 +126,8 @@ voice text is never run as a shell command).
 - **`lib/commandParser.ts`** — turns a heard phrase into a typed command.
 - **`lib/webFallback.ts`** / **`lib/nativeAgent.ts`** — resolve "open X" to a
   web URL, or relay it to the local agent.
+- **`lib/systemInfo.ts`** / **`lib/weather.ts`** — real, best-effort device
+  telemetry (CPU/memory/network/battery/device labels) and opt-in weather.
 - **`agent/`** — the optional local companion process that can actually
   launch native apps (see above).
 - **`components/JarvisOrb.tsx`** — the HUD and glue between the scene, the

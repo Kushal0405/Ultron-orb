@@ -76,7 +76,7 @@ body {
   fill: none;
   stroke: #4fd8ff;
   stroke-width: 1.4;
-  opacity: 0.55;
+  opacity: 0.4;
 }
 .corner-bracket.tl {
   top: 14px;
@@ -107,97 +107,252 @@ body {
   user-select: none;
 }
 
-.panel-title {
-  top: 24px;
-  left: 24px;
+/* ——— Top bar ——— */
+.topbar {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  background: rgba(2, 8, 16, 0.55);
+  border-bottom: 1px solid rgba(79, 216, 255, 0.2);
+  backdrop-filter: blur(3px);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6bffc7;
+  box-shadow: 0 0 8px 2px rgba(107, 255, 199, 0.8);
+  flex: none;
+}
+
+.brand-title {
   font-size: 13px;
-  letter-spacing: 0.35em;
-  opacity: 0.75;
+  letter-spacing: 0.3em;
   text-shadow: 0 0 10px rgba(79, 216, 255, 0.85);
-  pointer-events: none;
 }
 
-.panel-title::after {
-  content: "";
-  display: block;
-  margin-top: 6px;
-  width: 120px;
-  height: 1px;
-  background: linear-gradient(to right, rgba(79, 216, 255, 0.85), transparent);
+.brand-subtitle {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  opacity: 0.5;
 }
 
-/* ——— Status console (top-right): clock, readouts, agent pill ——— */
-.panel-status {
-  top: 24px;
-  right: 24px;
+.topbar-hint {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  text-align: center;
+  flex: 1;
+}
+
+.topbar-clock {
   text-align: right;
   font-size: 11px;
-  line-height: 1.7;
-  letter-spacing: 0.12em;
-  opacity: 0.8;
-  text-shadow: 0 0 8px rgba(79, 216, 255, 0.55);
-}
-
-.panel-status .clock {
-  font-size: 15px;
-  letter-spacing: 0.15em;
-  color: #9fe9ff;
-}
-
-.readout-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  align-items: center;
-}
-
-.readout-bar {
-  width: 48px;
-  height: 3px;
-  background: rgba(79, 216, 255, 0.15);
-  position: relative;
-  overflow: hidden;
-}
-
-.readout-bar > span {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to right, #1e8fd6, #9fe9ff);
-  transform-origin: left;
-}
-
-.status-line {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.status-value {
-  color: rgba(79, 216, 255, 0.65);
-}
-
-.status-value.up {
-  color: #6bffc7;
-  text-shadow: 0 0 6px rgba(107, 255, 199, 0.6);
-}
-
-.status-divider {
-  margin: 6px 0;
-  height: 1px;
-  background: linear-gradient(to left, rgba(79, 216, 255, 0.5), transparent);
-}
-
-.agent-pill {
-  margin-top: 10px;
-  font-size: 10px;
   letter-spacing: 0.1em;
-  padding: 3px 8px;
+}
+
+.topbar-clock .clock {
+  font-size: 15px;
+  color: #9fe9ff;
+  letter-spacing: 0.12em;
+}
+
+.topbar-clock .date {
+  opacity: 0.55;
+  font-size: 10px;
+}
+
+/* ——— Sidebars ——— */
+.sidebar {
+  top: 76px;
+  bottom: 76px;
+  width: 272px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 216, 255, 0.3) transparent;
+}
+
+.sidebar-left {
+  left: 16px;
+}
+
+.sidebar-right {
+  right: 16px;
+}
+
+/* ——— Cards ——— */
+.card {
+  flex: none;
+  background: rgba(3, 12, 22, 0.6);
+  border: 1px solid rgba(79, 216, 255, 0.22);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(2px);
+  box-shadow: 0 0 14px rgba(31, 140, 214, 0.08) inset;
+}
+
+.card-grow {
+  flex: 1;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(79, 216, 255, 0.15);
+}
+
+.card-title {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: #9fe9ff;
+  opacity: 0.85;
+}
+
+.card-badge {
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border: 1px solid rgba(79, 216, 255, 0.3);
+  border-radius: 3px;
+  opacity: 0.6;
+}
+
+.card-badge.live {
+  color: #6bffc7;
+  border-color: rgba(107, 255, 199, 0.6);
+  opacity: 1;
+}
+
+.card-action {
+  background: none;
+  border: none;
+  color: rgba(79, 216, 255, 0.65);
+  font-family: "Courier New", monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ——— Gauges ——— */
+.gauge-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.gauge {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gauge svg {
+  width: 60px;
+  height: 60px;
+  transform: rotate(-90deg);
+}
+
+.gauge-track {
+  fill: none;
+  stroke: rgba(79, 216, 255, 0.12);
+  stroke-width: 5;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.gauge-fill.c-mic {
+  stroke: #9fe9ff;
+}
+.gauge-fill.c-fps {
+  stroke: #6bffc7;
+}
+.gauge-fill.c-battery {
+  stroke: #ffcc66;
+}
+
+.gauge-value {
+  position: absolute;
+  font-size: 11px;
+  font-weight: bold;
+  color: #eafcff;
+}
+
+.gauge-label {
+  position: absolute;
+  bottom: -16px;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+/* ——— Stat rows ——— */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  opacity: 0.85;
+}
+
+.stat-value {
+  color: #9fe9ff;
+  text-align: right;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ——— Agent pill (reused inside the AGENT card) ——— */
+.agent-pill {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 6px 8px;
   border: 1px solid rgba(79, 216, 255, 0.4);
   border-radius: 3px;
   background: rgba(4, 14, 26, 0.55);
   cursor: pointer;
   color: #4fd8ff;
   font-family: "Courier New", monospace;
+  text-align: center;
 }
 
 .agent-pill[data-state="connected"] {
@@ -214,14 +369,160 @@ body {
   color: #ff6a5a;
 }
 
-/* ——— Voice console (below title, left) ——— */
-.panel-voice {
-  top: 76px;
-  left: 24px;
-  width: 260px;
+/* ——— Quick actions ——— */
+.quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.quick-btn {
+  background: rgba(4, 14, 26, 0.6);
+  border: 1px solid rgba(79, 216, 255, 0.35);
+  border-radius: 4px;
+  color: #4fd8ff;
+  font-family: "Courier New", monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  padding: 9px 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.quick-btn:hover:not(:disabled) {
+  background: rgba(10, 40, 65, 0.75);
+  border-color: rgba(150, 225, 255, 0.9);
+}
+
+.quick-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ——— Weather ——— */
+.weather-temp {
+  font-size: 26px;
+  color: #9fe9ff;
+  line-height: 1.1;
+}
+
+.weather-place {
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-shadow: 0 0 8px rgba(79, 216, 255, 0.5);
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.weather-condition {
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+/* ——— Active subsystems ——— */
+.subsystem-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  opacity: 0.85;
+}
+
+.subsystem-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(79, 216, 255, 0.3);
+  flex: none;
+}
+
+.subsystem-dot.up {
+  background: #6bffc7;
+  box-shadow: 0 0 6px 1px rgba(107, 255, 199, 0.7);
+}
+
+/* ——— Conversation ——— */
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 216, 255, 0.3) transparent;
+}
+
+.chat-empty {
+  opacity: 0.4;
+  font-style: italic;
+  font-size: 10.5px;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 94%;
+}
+
+.chat-bubble.you {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-bubble.ultron {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-from {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  opacity: 0.45;
+}
+
+.chat-text {
+  font-size: 10.5px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(79, 216, 255, 0.08);
+  border: 1px solid rgba(79, 216, 255, 0.2);
+  word-break: break-word;
+}
+
+.chat-text.action {
+  color: #6bffc7;
+  border-color: rgba(107, 255, 199, 0.35);
+}
+
+.chat-text.error {
+  color: #ff6a5a;
+  border-color: rgba(255, 106, 90, 0.35);
+}
+
+/* ——— Center session readout ——— */
+.center-status {
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  opacity: 0.45;
+  pointer-events: none;
+  text-align: center;
+}
+
+/* ——— Voice strip (center, above the bottom bar) ——— */
+.voice-strip {
+  bottom: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
 }
 
 .voice-state {
@@ -229,7 +530,9 @@ body {
   align-items: center;
   gap: 7px;
   opacity: 0.85;
-  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(79, 216, 255, 0.5);
 }
 
 .voice-dot {
@@ -268,9 +571,9 @@ body {
 .voice-meter {
   display: flex;
   align-items: flex-end;
+  justify-content: center;
   gap: 2px;
   height: 14px;
-  margin-bottom: 6px;
 }
 
 .voice-meter span {
@@ -283,8 +586,11 @@ body {
 
 .voice-caption {
   min-height: 14px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   opacity: 0.8;
   word-break: break-word;
+  text-shadow: 0 0 8px rgba(79, 216, 255, 0.5);
 }
 
 .voice-caption.interim {
@@ -293,86 +599,36 @@ body {
 }
 
 .voice-executing {
-  margin-top: 6px;
   color: #6bffc7;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-shadow: 0 0 8px rgba(107, 255, 199, 0.6);
   animation: voice-pulse 0.9s ease-in-out infinite;
 }
 
-/* ——— Command log (bottom-center) ——— */
-.panel-log {
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(420px, 70vw);
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 3px;
-  pointer-events: none;
-  text-align: center;
+.key-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  opacity: 0.45;
 }
 
-.log-line {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  opacity: 0.85;
-  text-shadow: 0 0 8px rgba(79, 216, 255, 0.55);
-  animation: log-in 0.2s ease-out;
-}
-
-.log-line.action {
-  color: #6bffc7;
-  text-shadow: 0 0 8px rgba(107, 255, 199, 0.6);
-}
-
-.log-line.error {
-  color: #ff6a5a;
-  text-shadow: 0 0 8px rgba(255, 106, 90, 0.6);
-}
-
-.log-line:nth-child(n + 4) {
-  opacity: 0.4;
-}
-.log-line:nth-child(n + 6) {
-  opacity: 0.18;
-}
-
-@keyframes log-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
-/* ——— Hint text (bottom-left) ——— */
-.panel-hint {
-  bottom: 24px;
-  left: 24px;
-  font-size: 11px;
-  line-height: 1.7;
-  letter-spacing: 0.1em;
-  opacity: 0.55;
-  text-shadow: 0 0 8px rgba(79, 216, 255, 0.55);
-  pointer-events: none;
-}
-
-.panel-hint .key {
+.key-hint .key {
   display: inline-block;
   padding: 0 4px;
   border: 1px solid rgba(79, 216, 255, 0.5);
   border-radius: 3px;
-  margin-right: 4px;
-  font-size: 10px;
+  font-size: 9px;
 }
 
-/* ——— Controls (bottom-right) ——— */
-.panel-controls {
-  bottom: 24px;
-  right: 24px;
+/* ——— Bottom bar ——— */
+.bottombar {
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  align-items: flex-end;
 }
 
 .hud-btn {
@@ -415,29 +671,28 @@ body {
   color: #9fe9ff;
 }
 
-.control-row {
-  display: flex;
-  gap: 8px;
-}
-
 .hud-error {
+  position: absolute;
+  bottom: 54px;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 11px;
   letter-spacing: 0.15em;
   color: #ff6a5a;
   text-shadow: 0 0 8px rgba(255, 90, 70, 0.7);
+  white-space: nowrap;
 }
 
-/* ——— Camera preview panel ——— */
+/* ——— Camera preview (inside the GESTURE CAM card) ——— */
 .camera-preview {
   position: relative;
-  width: 208px;
-  height: 156px;
+  width: 100%;
+  aspect-ratio: 208 / 156;
   display: none;
   border: 1px solid rgba(79, 216, 255, 0.45);
   border-radius: 4px;
   overflow: hidden;
   background: #01060d;
-  box-shadow: 0 0 16px rgba(31, 140, 214, 0.2);
 }
 
 .camera-preview.visible {
@@ -469,66 +724,23 @@ body {
   right: 0;
   padding: 3px 6px;
   font-size: 10px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.1em;
   color: #9fe9ff;
   background: rgba(2, 8, 16, 0.7);
   text-shadow: 0 0 6px rgba(79, 216, 255, 0.8);
 }
 
+@media (max-width: 1100px) {
+  .sidebar {
+    display: none;
+  }
+}
+
 @media (max-width: 600px) {
-  .panel-hint {
+  .topbar-hint {
     display: none;
   }
-  .panel-voice {
-    width: 200px;
-  }
-  .panel-status {
+  .key-hint {
     display: none;
-  }
-}
-
-/* ——— Boot sequence overlay ——— */
-.boot-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 4, 10, 0.86);
-  pointer-events: none;
-  transition: opacity 0.6s ease;
-}
-
-.boot-overlay.hidden {
-  opacity: 0;
-}
-
-.boot-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 22px 30px;
-  background: rgba(1, 6, 14, 0.8);
-  border: 1px solid rgba(79, 216, 255, 0.3);
-  border-radius: 4px;
-  font-size: 13px;
-  letter-spacing: 0.12em;
-  color: #9fe9ff;
-  text-shadow: 0 0 8px rgba(79, 216, 255, 0.7);
-}
-
-.boot-line {
-  animation: boot-line-in 0.25s ease both;
-}
-
-@keyframes boot-line-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }

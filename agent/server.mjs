@@ -100,7 +100,13 @@ wss.on("connection", (ws, req) => {
       clearTimeout(authTimer);
       if (typeof msg.token === "string" && msg.token === token) {
         authed = true;
-        ws.send(JSON.stringify({ type: "auth_ok" }));
+        let appCount = 0;
+        try {
+          appCount = Object.keys(loadApps()).length;
+        } catch {
+          // apps.json is malformed — report 0 rather than failing auth over it
+        }
+        ws.send(JSON.stringify({ type: "auth_ok", platform: process.platform, appCount }));
       } else {
         ws.send(JSON.stringify({ type: "auth_fail" }));
         ws.close(1008, "bad token");
