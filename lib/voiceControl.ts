@@ -69,6 +69,12 @@ export interface VoiceControlOptions {
 const DEFAULT_WAKE_WORDS = ["hey ultron", "ultron", "hey jarvis"];
 const DEFAULT_WAKE_WINDOW_MS = 7000;
 const RESTART_DEBOUNCE_MS = 250;
+const MAX_RESTART_DELAY_MS = 10_000;
+// Chrome/Edge's SpeechRecognition calls out to a cloud recognition service —
+// it isn't local. A persistent "network" error (no route to that service)
+// would otherwise retry instantly forever, spamming the same error. Back
+// off exponentially and give up with one clear message instead.
+const MAX_CONSECUTIVE_ERRORS = 5;
 
 function getSpeechRecognitionCtor(): (new () => SpeechRecognition) | null {
   if (typeof window === "undefined") return null;
@@ -113,6 +119,8 @@ export class VoiceControl {
   private audioCtx: AudioContext | null = null;
   private levelRaf = 0;
 
+  private consecutiveErrors = 0;
+
   constructor(callbacks: VoiceControlCallbacks, options: VoiceControlOptions = {}) {
     this.callbacks = callbacks;
     this.wakeWords = (options.wakeWords ?? DEFAULT_WAKE_WORDS).map(normalize);
@@ -128,6 +136,7 @@ export class VoiceControl {
     }
 
     this.running = true;
+    this.consecutiveErrors = 0;
     this.setState("listening");
     this.initRecognition(Ctor);
     this.recognition?.start();
@@ -165,6 +174,7 @@ export class VoiceControl {
     recognition.lang = this.lang;
 
     recognition.onresult = (event) => {
+      this.consecutiveErrors = 0; // a result proves this attempt actually reached the recognition service
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const best = this.bestAlternative(result);
@@ -184,13 +194,34 @@ export class VoiceControl {
         return;
       }
       if (event.error === "no-speech" || event.error === "aborted") return;
-      this.callbacks.onError(`VOICE ERROR: ${event.error.toUpperCase()}`);
+
+      this.consecutiveErrors++;
+      if (this.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        this.running = false;
+        this.setState("error");
+        this.callbacks.onError(
+          `VOICE ERROR: ${event.error.toUpperCase()} — giving up after ${this.consecutiveErrors} failed attempts. ` +
+            "Check your internet connection (speech recognition calls out to a cloud service, it isn't local), " +
+            "then toggle voice off/on to retry.",
+        );
+        return;
+      }
+      // Only the first failure is reported — a persistent problem would
+      // otherwise print the same line on every retry.
+      if (this.consecutiveErrors === 1) {
+        this.callbacks.onError(`VOICE ERROR: ${event.error.toUpperCase()}`);
+      }
     };
 
     recognition.onend = () => {
       if (!this.running) return;
       // Mobile/desktop browsers stop recognition after brief silence — restart
       // it automatically so listening behaves like an always-on wake word.
+      // Back off on repeated failures instead of retrying instantly forever.
+      const delay =
+        this.consecutiveErrors > 0
+          ? Math.min(RESTART_DEBOUNCE_MS * 2 ** this.consecutiveErrors, MAX_RESTART_DELAY_MS)
+          : RESTART_DEBOUNCE_MS;
       this.restartTimer = setTimeout(() => {
         if (!this.running) return;
         try {
@@ -198,7 +229,7 @@ export class VoiceControl {
         } catch {
           // already started — ignore
         }
-      }, RESTART_DEBOUNCE_MS);
+      }, delay);
     };
 
     this.recognition = recognition;
